@@ -15,6 +15,8 @@
 
 Official code for our paper accepted at the **BISCUIT Workshop @ ECCV 2026**.
 
+**📄 Read our paper on arXiv: [here](https://arxiv.org/html/2610.21794v1)**
+
 </div>
 
 ---
