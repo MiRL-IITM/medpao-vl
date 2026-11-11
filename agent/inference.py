@@ -39,7 +39,7 @@ from tools import llm_backend  # noqa: E402
 # Local folder (converted model) or Hugging Face repo id. The Hub repo is gated: log in with `hf auth login`.
 VISION_MODEL     = os.environ.get("MEDPAO_VISION_MODEL", "shrishSVaidya/slot-attn-cxr-medsiglip")
 DEFAULT_MODE     = "deterministic"   # deterministic | cold | warm
-MIN_CONCEPT_PROB = 0.0               # keep a present/absent concept only if its probability is >= this (0 = plain argmax)
+MIN_CONCEPT_PROB = 0.6               # keep a present/absent concept only if its probability is >= this (0 = plain argmax)
 TOP_K_OVERLAYS   = 6                 # attention maps drawn for the most confident present concepts
 OVERLAY_ALPHA    = 0.6               # strength of the attention heat map
 ATTN_GRID        = 32                # 448 px input / 14 px patches

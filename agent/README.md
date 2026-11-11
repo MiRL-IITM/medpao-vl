@@ -79,7 +79,7 @@ python inference.py --image cxr.jpg --mode warm         # PAO loop + concept cac
 python inference.py --image cxr.jpg --concepts-only     # vision step only (no LLM servers needed)
 ```
 
-Results (JSON, attention maps) are saved in `inference_outputs/<image name>/`. Useful options: `--vision-model` (local folder or Hub repo id, default `shrishSVaidya/slot-attn-cxr-medsiglip`, also settable with `MEDPAO_VISION_MODEL`), `--min-prob` (drop low-confidence concepts), `--top-k` (number of attention maps), `--device`.
+Results (JSON, attention maps) are saved in `inference_outputs/<image name>/`. Useful options: `--vision-model` (local folder or Hub repo id, default `shrishSVaidya/slot-attn-cxr-medsiglip`, also settable with `MEDPAO_VISION_MODEL`), `--min-prob` (keep only present/absent concepts with probability ≥ this, default 0.6), `--top-k` (number of attention maps), `--device`.
 
 The vision model is loaded with `AutoModel` (no Habana software needed). The Hub repo is gated: request access, then `hf auth login`. The agent stage needs the same servers and files as the batch scripts.
 
