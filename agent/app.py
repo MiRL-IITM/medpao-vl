@@ -8,7 +8,7 @@ Run from this folder:
     python app.py --share               # temporary public link
 
     # load the LLMs in this process instead of calling the HTTP servers (all models are loaded at start-up):
-    python app.py --vlm-model <path> [--vlm-adapter <lora>] --extractor-model <path> --chat-model <path>
+    python app.py --vlm-model <path> [--vlm-adapter <lora>] [--text-model <base>] --extractor-adapter <lora> --categorizer-adapter <lora>
 
 The report stages need the same LLM servers and index files as the batch scripts (see README.md).
 Research use only: not a medical device, not validated for clinical use.

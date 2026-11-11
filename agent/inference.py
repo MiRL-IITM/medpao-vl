@@ -11,7 +11,7 @@ Run from this folder (the agent scripts import ``tools/``):
 LLM calls go to the HTTP servers configured in tools/*.py by default. To load the LLMs in this process instead:
 
     python inference.py --image cxr.jpg --vlm-model <path> [--vlm-adapter <lora>] \
-        --extractor-model <path> --chat-model <path>
+        [--text-model <base>] --extractor-adapter <lora> --categorizer-adapter <lora>
 
 The agent stage also needs the SNOMED index and SapBERT files (see README.md).
 Research use only: not a medical device, not validated for clinical use.

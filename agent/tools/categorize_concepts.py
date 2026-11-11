@@ -218,7 +218,7 @@ def categorize_the_concepts(start, saving_dir = os.path.join(os.getcwd(), SAVING
             {"role": "user", "content": prompt}
         ]
         if llm_backend.is_local():
-            output = llm_backend.chat(messages, max_new_tokens=MAX_NEW_TOKENS).strip()
+            output = llm_backend.chat(messages, max_new_tokens=MAX_NEW_TOKENS, role="categorizer").strip()
         else:
             response = client.chat.completions.create(
                 model=LLM_MODEL,

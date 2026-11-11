@@ -190,7 +190,7 @@ python inference.py --image cxr.jpg      # image -> vision concepts -> agent -> 
 python app.py                            # Gradio demo (pip install gradio)
 ```
 
-By default the LLM steps call the three servers; to load the LLMs from model paths in the same process instead, add `--vlm-model`, `--extractor-model` and `--chat-model` (see [agent/README.md](agent/README.md#local-models-instead-of-servers)).
+By default the LLM steps call the three servers; to load the LLMs from model paths in the same process instead, add `--vlm-model`, `--extractor-adapter` and `--categorizer-adapter` (one shared Qwen3-4B-Instruct-2507 base) (see [agent/README.md](agent/README.md#local-models-instead-of-servers)).
 
 ### 5. Analyse the learned slots
 

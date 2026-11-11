@@ -97,15 +97,17 @@ Upload a chest X-ray, pick the agent mode (default `deterministic`) and press **
 
 By default the agent calls the three TGI servers. It can instead **load the LLMs in the same process** from model paths. Give the paths and every model is loaded up front (`preload`), then used whenever a step needs it. The server mode stays the default and is unchanged.
 
-Three models (roles) are needed:
+Two model groups are needed:
 
 | Role | Used for | Replaces |
 |---|---|---|
 | `vlm` (+ optional LoRA `vlm-adapter`) | grounded report, missing-concept lines | server on port 8082 |
-| `extractor` | concept extraction (raw text completion) | server on port 8081 |
-| `chat` | categorization, structured report | server on port 8080 |
+| `text` base: `Qwen/Qwen3-4B-Instruct-2507` (loaded once) | shared by the three steps below | servers on 8081 and 8080 |
+| ↳ concept extraction | raw text completion, **extractor LoRA** | port 8081 |
+| ↳ concept categorization | chat, **categorizer LoRA** | port 8080 |
+| ↳ structured report | chat, plain base model (no LoRA) | port 8080 |
 
-`extractor` and `chat` may be the same path; the model is then loaded once. Each path can be a local folder or a Hub id.
+The two LoRAs are attached to the same base weights and switched per call, so the text side costs one 4B model in memory. Set the base id and the two adapter paths at the top of `tools/llm_backend.py` (`TEXT_BASE_MODEL`, `EXTRACTOR_ADAPTER`, `CATEGORIZER_ADAPTER`), or pass them as flags / environment variables. Each path can be a local folder or a Hub id. SapBERT is unchanged.
 
 ```bash
 cd agent
@@ -113,22 +115,23 @@ cd agent
 # one image
 python inference.py --image cxr.jpg \
     --vlm-model google/medgemma-4b-it --vlm-adapter ../hf_upload/hf_lora_cxr \
-    --extractor-model <path> --chat-model <path>
+    --extractor-adapter <lora> --categorizer-adapter <lora>      # [--text-model <base>] to change the base
 
 # Gradio demo (models are loaded at start-up; --no-preload loads them on the first request instead)
-python app.py --vlm-model <path> --vlm-adapter <lora> --extractor-model <path> --chat-model <path>
+python app.py --vlm-model <path> --vlm-adapter <lora> --extractor-adapter <lora> --categorizer-adapter <lora>
 
 # batch scripts take the same settings from environment variables
 MEDPAO_BACKEND=local MEDPAO_VLM_MODEL=<path> MEDPAO_VLM_ADAPTER=<lora> \
-MEDPAO_EXTRACTOR_MODEL=<path> MEDPAO_CHAT_MODEL=<path> python deterministic.py
+MEDPAO_EXTRACTOR_ADAPTER=<lora> MEDPAO_CATEGORIZER_ADAPTER=<lora> python deterministic.py
 ```
 
-Other options: `--llm-dtype` (default `auto`: bfloat16 on GPUs that support it, float16 otherwise, bfloat16 on CPU), `--device-map` (default `auto`, spreads large models over all GPUs), `--load-in-4bit` (needs `bitsandbytes`). Giving any `--*-model` path switches to the local backend; `--backend server` forces the servers.
+Other options: `--llm-dtype` (default `auto`: bfloat16 on GPUs that support it, float16 otherwise, bfloat16 on CPU), `--device-map` (default `auto`, spreads large models over all GPUs), `--load-in-4bit` (needs `bitsandbytes`). Giving any model/adapter path switches to the local backend; `--backend server` forces the servers.
 
 Notes:
-- The local models need enough GPU memory for all three roles together; large chat models usually need several GPUs or `--load-in-4bit`.
+- The local models need GPU memory for the VLM plus one 4B text model (the two LoRAs are small); use `--load-in-4bit` if tight.
+- Text generations run one at a time (the LoRAs are switched on the shared model).
 - Server-only options such as the OpenAI-style `frequency_penalty` are reproduced with a standard logits penalty, so outputs can differ slightly from the servers. The values are the `*_PENALTY` constants at the top of `tools/generate_report.py`.
-- Models that wrap their answer in a markdown fence or a `<think>` block are handled as before: the structured-report step strips `</think>`, and the JSON is found with a regex.
+- Replies wrapped in a markdown fence are handled as before: the JSON is found with a regex.
 - The SNOMED index and SapBERT files are still required (they were never served over HTTP).
 
 ## Output
