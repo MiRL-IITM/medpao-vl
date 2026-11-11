@@ -21,3 +21,5 @@ savings.json
 split_jsons/snomed_data.npy
 .venv/
 medpao_vl_env/
+
+inference_outputs/

@@ -182,6 +182,14 @@ python react_warm_cache.py     # PAO loop + concept cache ("PAO Full, Warm Cache
 
 The agent needs three TGI-compatible servers and the SNOMED index; setup and configuration are in [agent/README.md](agent/README.md).
 
+To run the whole chain on a single chest X-ray, or to try the Gradio demo:
+
+```bash
+cd agent
+python inference.py --image cxr.jpg      # image -> vision concepts -> agent -> structured report
+python app.py                            # Gradio demo (pip install gradio)
+```
+
 ### 5. Analyse the learned slots
 
 ```bash

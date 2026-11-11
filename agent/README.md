@@ -22,6 +22,8 @@ image + vision concepts
 | `deterministic.py` | Baseline pipeline, no self-correction, no cache. |
 | `react_cold_cache.py` | Pipeline with the self-correction loop. Does not look up the cache; the categorization step still appends to `cached_vocab.json`. |
 | `react_warm_cache.py` | Same as cold, plus a cache check: concepts already in `cached_vocab.json` skip ontology mapping and categorization. Wipes its scratch folder before every image. |
+| `inference.py` | Single-image, end-to-end inference: CXR image → vision concept model → agent → structured report (CLI). |
+| `app.py` | Gradio demo of the same pipeline: upload a CXR, see concepts, attention maps and the structured report. |
 | `tools/generate_report.py` | Asks the VLM (image + concepts) for the findings; also writes the extra lines for missing concepts. |
 | `tools/get_concept.py` | Asks an LLM to pull `{concept: source sentence}` out of a report. |
 | `tools/compare_concepts.py` | Compares vision concepts with report concepts using SapBERT similarity; returns the missing ones. |
@@ -64,6 +66,32 @@ Quick check of the SNOMED matcher on its own:
 ```bash
 python tools/ontology_map_sapbert.py
 ```
+
+## Inference on a single image
+
+The batch scripts above take the vision concepts from a CSV. `inference.py` runs the whole chain on one chest X-ray: it predicts the concepts with the vision model, turns them into the `name(1.0), name(-1.0)` string (uncertain concepts are dropped), and passes them to the chosen agent.
+
+```bash
+cd agent
+python inference.py --image cxr.jpg                     # deterministic agent (default)
+python inference.py --image cxr.jpg --mode cold         # PAO loop, no cache lookup
+python inference.py --image cxr.jpg --mode warm         # PAO loop + concept cache
+python inference.py --image cxr.jpg --concepts-only     # vision step only (no LLM servers needed)
+```
+
+Results (JSON, attention maps) are saved in `inference_outputs/<image name>/`. Useful options: `--vision-model` (local folder or Hub repo id, default `shrishSVaidya/slot-attn-cxr-medsiglip`, also settable with `MEDPAO_VISION_MODEL`), `--min-prob` (drop low-confidence concepts), `--top-k` (number of attention maps), `--device`.
+
+The vision model is loaded with `AutoModel` (no Habana software needed). The Hub repo is gated: request access, then `hf auth login`. The agent stage needs the same servers and files as the batch scripts.
+
+### Gradio demo
+
+```bash
+pip install "gradio>=4.44,<5" "pydantic<2.11"    # Python 3.9; on Python >= 3.10 just: pip install gradio
+cd agent
+python app.py                                     # http://127.0.0.1:7860
+```
+
+Upload a chest X-ray, pick the agent mode (default `deterministic`) and press **Generate**. The page shows the predicted concepts, attention maps for the most confident present concepts, the structured ABCDEF report, the free-text report (and the first draft), and the correction log and timings. Tick *Vision step only* to try the interface without the LLM servers. Requests are processed one at a time because the agent scripts share one scratch folder. Options: `--vision-model`, `--host`, `--port`, `--share`.
 
 ## Output
 
