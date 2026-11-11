@@ -86,12 +86,14 @@ The vision model is loaded with `AutoModel` (no Habana software needed). The Hub
 ### Gradio demo
 
 ```bash
-pip install "gradio>=4.44,<5" "pydantic<2.11"    # Python 3.9; on Python >= 3.10 just: pip install gradio
+pip install "gradio>=4.44,<5" "pydantic<2.11" rapidfuzz opencv-python-headless   # Python 3.9; on Python >= 3.10: pip install gradio rapidfuzz opencv-python-headless
 cd agent
 python app.py                                     # http://127.0.0.1:7860
 ```
 
-Upload a chest X-ray, pick the agent mode (default `deterministic`) and press **Generate**. The page shows the predicted concepts, attention maps for the most confident present concepts, the structured ABCDEF report, the free-text report (and the first draft), and the correction log and timings. Tick *Vision step only* to try the interface without the LLM servers. Requests are processed one at a time because the agent scripts share one scratch folder. Options: `--vision-model`, `--host`, `--port`, `--share`.
+Upload a chest X-ray, pick the agent mode (default `deterministic`) and press **Generate**. The pipeline bar shows each step live with its time. The page shows the vision concepts, then the **Transformation Studio**: the free-text report next to the structured ABCDEF report, linked sentence by sentence. Hover a sentence on either side and its counterpart lights up; hovering a structured sentence opens the chain **free-text source → concept → SNOMED CT mapping → attention map** with the match confidence. Further tabs list the extracted concepts, SNOMED mappings, ABCDEF categories, attention maps of the most confident concepts, and a debug JSON (correction log, timings). Tick *Vision step only* to try the interface without the LLMs.
+
+The links are fuzzy matches (rapidfuzz): a structured sentence is matched to its concept, the concept to its source sentence in the report, and the concept to a vision-model concept (to pick the attention map). They are a reading aid, not ground truth; thresholds are at the top of `app.py`. Requests are processed one at a time because the agent scripts share one scratch folder. Options: `--vision-model`, `--host`, `--port`, `--share`, `--no-preload` and the LLM options below.
 
 ## Local models instead of servers
 

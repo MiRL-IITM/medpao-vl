@@ -19,6 +19,7 @@ Research use only: not a medical device, not validated for clinical use.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import importlib
 import json
 import os
@@ -153,7 +154,50 @@ def attention_overlay(image: Image.Image, attn: np.ndarray, alpha: float = OVERL
 
 
 # ── Agent stage ──────────────────────────────────────────────────────────────
-def run_agent(mode: str, image_path: str, concepts_str: str) -> dict:
+@contextlib.contextmanager
+def _instrument(module, progress):
+    """Report the start/end of every agent step to `progress(event)` while the module's pipeline runs (used by the
+    Gradio app for live progress). Events: {"type": "start"|"end", "step": key, "elapsed": s, "result": value}.
+    Step keys: grounded, correction, concepts, cache, ontology, categorize, structured."""
+    state = {"correction": False}
+
+    def wrap(owner, attr, key_fn):
+        original = getattr(owner, attr)
+
+        def wrapped(*args, **kwargs):
+            key = key_fn(kwargs)
+            progress({"type": "start", "step": key})
+            t = time.perf_counter()
+            result = original(*args, **kwargs)
+            progress({"type": "end", "step": key, "elapsed": time.perf_counter() - t, "result": result})
+            return result
+
+        setattr(owner, attr, wrapped)
+        return lambda: setattr(owner, attr, original)
+
+    def grounded_key(kwargs):
+        if kwargs.get("missing_prompt") is not None:
+            state["correction"] = True
+            return "correction"
+        return "grounded"
+
+    restores = [
+        wrap(module, "generate_the_grounded_report", grounded_key),
+        wrap(module, "get_the_concept", lambda kw: "correction" if state["correction"] else "concepts"),
+        wrap(module.ontology_mapper, "match", lambda kw: "ontology"),
+        wrap(module, "categorize_the_concepts", lambda kw: "categorize"),
+        wrap(module, "generate_the_report", lambda kw: "structured"),
+    ]
+    if hasattr(module, "check_the_cache"):
+        restores.append(wrap(module, "check_the_cache", lambda kw: "cache"))
+    try:
+        yield
+    finally:
+        for restore in restores:
+            restore()
+
+
+def run_agent(mode: str, image_path: str, concepts_str: str, progress=None) -> dict:
     """Run one of the batch scripts' single-image functions. Importing a script loads its heavy
     components (SNOMED index, SapBERT), so this happens lazily, once per mode."""
     if mode not in AGENT_MODULES:
@@ -170,7 +214,8 @@ def run_agent(mode: str, image_path: str, concepts_str: str) -> dict:
     if hasattr(module, "CACHE_DIR"):
         module.CACHE_DIR = str(scratch) + module.CACHE_DIR_SUFFIX   # warm mode: persistent concept cache lives next to the scratch folder
     module.ontology_mapper.saving_dir = str(scratch)
-    result = getattr(module, fn_name)(image_path, concepts_str)
+    with (_instrument(module, progress) if progress else contextlib.nullcontext()):
+        result = getattr(module, fn_name)(image_path, concepts_str)
     if result is None:
         raise RuntimeError("The agent skipped this image (report generation, concept extraction or the cache "
                            "check failed). See the console log for the failing step.")
@@ -185,7 +230,9 @@ def final_report_text(agent_result: dict) -> str:
 # ── End to end ───────────────────────────────────────────────────────────────
 def run_inference(image_path: str, mode: str = DEFAULT_MODE, predictor: Optional[VisionConceptPredictor] = None,
                   min_prob: float = MIN_CONCEPT_PROB, top_k: int = TOP_K_OVERLAYS,
-                  concepts_only: bool = False) -> dict:
+                  concepts_only: bool = False, progress=None) -> dict:
+    """`progress(event)` (optional) is called with {"type": "vision", "result": partial_result} after the vision step
+    and then with the agent step events of `_instrument`."""
     predictor = predictor or VisionConceptPredictor()
     image = Image.open(image_path).convert("RGB")
     timings: Dict[str, float] = {}
@@ -208,7 +255,11 @@ def run_inference(image_path: str, mode: str = DEFAULT_MODE, predictor: Optional
         "overlays": prediction.overlays(image, top_k, min_prob),
         "agent": None,
         "timings": timings,
+        "prediction": prediction,   # full ConceptPrediction (all concepts, attention) and the image, for the UI
+        "image": image,
     }
+    if progress:
+        progress({"type": "vision", "result": result})
     if concepts_only:
         return result
     if not concepts_str:
@@ -216,7 +267,7 @@ def run_inference(image_path: str, mode: str = DEFAULT_MODE, predictor: Optional
                            "threshold, so there is nothing to ground a report on.")
 
     t = time.perf_counter()
-    result["agent"] = run_agent(mode, image_path, concepts_str)
+    result["agent"] = run_agent(mode, image_path, concepts_str, progress)
     timings["agent_time_sec"] = round(time.perf_counter() - t, 4)
     return result
 
@@ -238,7 +289,7 @@ def save_outputs(result: dict, out_dir: Path) -> None:
     for img, caption in result["overlays"]:
         name = re.sub(r"[^A-Za-z0-9_.-]+", "_", caption.split(" (")[0])[:60]
         img.save(out_dir / f"attention_{name}.png")
-    serializable = {k: v for k, v in result.items() if k != "overlays"}
+    serializable = {k: v for k, v in result.items() if k not in ("overlays", "prediction", "image")}
     with open(out_dir / "result.json", "w") as f:
         json.dump(serializable, f, indent=4, default=str)
 
