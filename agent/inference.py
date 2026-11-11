@@ -41,7 +41,8 @@ VISION_MODEL     = os.environ.get("MEDPAO_VISION_MODEL", "shrishSVaidya/slot-att
 DEFAULT_MODE     = "deterministic"   # deterministic | cold | warm
 MIN_CONCEPT_PROB = 0.6               # keep a present/absent concept only if its probability is >= this (0 = plain argmax)
 TOP_K_OVERLAYS   = 6                 # attention maps drawn for the most confident present concepts
-OVERLAY_ALPHA    = 0.6               # strength of the attention heat map
+OVERLAY_ALPHA    = 0.85              # strength of the attention heat map
+OVERLAY_GAMMA, OVERLAY_THRESHOLD, OVERLAY_INTENSITY, OVERLAY_BLUR_SIGMA = 0.35, 0.25, 2.5, 1.0   # attention map sharpening
 ATTN_GRID        = 32                # 448 px input / 14 px patches
 OUTPUT_DIR       = "inference_outputs"
 SCRATCH_DIR      = "inference_outputs/_agent_scratch"   # intermediate agent files (the batch scripts' SAVINGS_DIR)
@@ -123,24 +124,32 @@ class VisionConceptPredictor:
         )
 
 
-def _jet(x: np.ndarray) -> np.ndarray:
-    """Matplotlib-free 'jet' colour map, x in [0, 1] -> RGB in [0, 1]."""
-    r = np.clip(1.5 - np.abs(4 * x - 3), 0, 1)
-    g = np.clip(1.5 - np.abs(4 * x - 2), 0, 1)
-    b = np.clip(1.5 - np.abs(4 * x - 1), 0, 1)
-    return np.stack([r, g, b], -1)
+def _prepare_attention(attn: np.ndarray, size: Tuple[int, int]) -> np.ndarray:
+    """One concept's flattened patch attention -> a sharp [0, 1] map at the image size (w, h).
+    Same processing as get_model_attn_maps.py: percentile normalisation, gamma, weak-activation cut-off, blur, cubic resize."""
+    import cv2
+    grid = int(round(attn.size ** 0.5))
+    a = attn.reshape(grid, grid).astype(np.float32)
+    a = np.clip(a, np.percentile(a, 5), np.percentile(a, 99))
+    a = (a - a.min()) / (a.max() - a.min() + 1e-8)
+    a = a ** OVERLAY_GAMMA
+    a[a < OVERLAY_THRESHOLD] = 0
+    a = cv2.GaussianBlur(a, (0, 0), OVERLAY_BLUR_SIGMA)
+    a = np.clip(a * OVERLAY_INTENSITY, 0, 1)
+    return cv2.resize(a, size, interpolation=cv2.INTER_CUBIC)
 
 
 def attention_overlay(image: Image.Image, attn: np.ndarray, alpha: float = OVERLAY_ALPHA) -> Image.Image:
-    """Overlay one concept's attention (flattened 32 x 32 grid) on the image."""
-    grid = int(round(attn.size ** 0.5))
-    a = attn.reshape(grid, grid).astype(np.float32)
-    a = (a - a.min()) / (a.max() - a.min() + 1e-8)
-    heat = Image.fromarray((a * 255).astype(np.uint8)).resize(image.size, Image.BILINEAR)
-    w = np.asarray(heat, dtype=np.float32)[..., None] / 255.0
+    """Overlay one concept's attention on the image (TURBO heat map, opacity follows the attention, plus a soft glow),
+    using the visualisation of get_model_attn_maps.py."""
+    import cv2
+    m = _prepare_attention(attn, image.size)
     base = np.asarray(image.convert("RGB"), dtype=np.float32) / 255.0
-    mix = (1 - alpha * w) * base + alpha * w * _jet(w[..., 0])
-    return Image.fromarray((np.clip(mix, 0, 1) * 255).astype(np.uint8))
+    heat = cv2.cvtColor(cv2.applyColorMap(np.uint8(m * 255), cv2.COLORMAP_TURBO), cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+    w = m[..., None] * alpha
+    mix = base * (1 - w) + heat * w
+    mix = np.clip(mix + 0.25 * cv2.GaussianBlur(mix, (0, 0), sigmaX=3) * w, 0, 1)
+    return Image.fromarray((mix * 255).astype(np.uint8))
 
 
 # ── Agent stage ──────────────────────────────────────────────────────────────

@@ -88,7 +88,7 @@ pip install torch torchvision transformers peft accelerate datasets trl bitsandb
             scikit-learn pandas numpy pillow tqdm matplotlib huggingface_hub
 ```
 
-Further packages are needed only for specific parts: `faiss-cpu`, `llama-cpp-python`, `rapidfuzz` and `psutil` for the agent; `nltk` for concept standardization; `seaborn` and `opencv-python` for the analysis plots; `wandb` for training logs.
+Further packages are needed only for specific parts: `faiss-cpu`, `llama-cpp-python`, `rapidfuzz`, `psutil`, `peft` and `opencv-python-headless` (attention maps) for the agent; `nltk` for concept standardization; `seaborn` and `opencv-python` for the analysis plots; `wandb` for training logs.
 
 MedSigLIP and MedGemma are gated on the Hugging Face Hub. Accept the terms on their model pages and log in before running anything that downloads them:
 

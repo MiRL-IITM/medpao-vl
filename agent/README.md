@@ -34,7 +34,7 @@ image + vision concepts
 
 ## Setup
 
-1. **Python packages:** `pandas tqdm pillow requests numpy huggingface_hub transformers torch scikit-learn faiss-cpu llama-cpp-python psutil rapidfuzz` (`rapidfuzz` is only needed by the warm script).
+1. **Python packages:** `pandas tqdm pillow requests numpy huggingface_hub transformers torch scikit-learn faiss-cpu llama-cpp-python psutil rapidfuzz opencv-python-headless peft` (`rapidfuzz` is only needed by the warm script).
 2. **Three TGI-compatible servers** must be running (or, instead, give model paths to load the LLMs locally: see [Local models instead of servers](#local-models-instead-of-servers)) (change the URLs at the top of each tool if yours differ):
 
    | Port | Used by | Type |
