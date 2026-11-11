@@ -13,6 +13,7 @@ from tools.generate_structured_report import generate_the_report
 from tools.compare_concepts import Comparison
 from tools.check_cache import check_the_cache, CACHE_DIR_SUFFIX
 from tools.ontology_map_sapbert import SnomedMatcher
+from tools import llm_backend
 
 # ───────────────────────────── CONFIG (edit here) ─────────────────────────────
 # --- Self-correction ---
@@ -288,6 +289,7 @@ def run_pao_pipeline(image_path: str, vision_concepts_str: str, iterations=SELF_
 
 
 if __name__=='__main__':
+    llm_backend.preload()      # MEDPAO_BACKEND=local: load all LLMs up front (no-op for the servers)
     full_df = pd.read_csv(INPUT_CSV)
 
     rows = full_df.iloc[ROW_START:ROW_END if ROW_END is not None else len(full_df)//2]

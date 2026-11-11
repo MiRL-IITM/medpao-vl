@@ -4,6 +4,8 @@ import json
 import os
 from tqdm import tqdm
 
+from tools import llm_backend
+
 # ───────────────────────────── CONFIG (edit here) ─────────────────────────────
 LLM_BASE_URL        = "http://localhost:8080/v1/"   # OpenAI-compatible (TGI) chat endpoint
 LLM_MODEL           = "tgi"                          # model name sent to the server
@@ -72,30 +74,34 @@ def get_llm_response(prompt, max_new_tokens=None):
     Returns:
         str: The LLM's response containing the generated medical report
     """
-    # Initialize the local inference client
-    client = InferenceClient(base_url=LLM_BASE_URL)
-    
-    if max_new_tokens==None:
-        response = client.chat.completions.create(
-        model=LLM_MODEL,
-        messages=[{"role": "system", "content": SYSTEM_MESSAGE},
-                  {"role": "user", "content": prompt}],
-        stream=False
-    )
+    messages = [{"role": "system", "content": SYSTEM_MESSAGE},
+                {"role": "user", "content": prompt}]
+    if llm_backend.is_local():
+        content = llm_backend.chat(messages, max_new_tokens=max_new_tokens)
     else:
-        response = client.chat.completions.create(
-            model=LLM_MODEL,
-            messages=[{"role": "system", "content": SYSTEM_MESSAGE},
-                    {"role": "user", "content": prompt}],
-            stream=False,
-            max_tokens=max_new_tokens
-        )
-    
+        # Initialize the local inference client
+        client = InferenceClient(base_url=LLM_BASE_URL)
+
+        if max_new_tokens==None:
+            response = client.chat.completions.create(
+                model=LLM_MODEL,
+                messages=messages,
+                stream=False
+            )
+        else:
+            response = client.chat.completions.create(
+                model=LLM_MODEL,
+                messages=messages,
+                stream=False,
+                max_tokens=max_new_tokens
+            )
+        content = response.choices[0].message.content
+
     # Extract the response content, removing any thinking section
-    if THINK_END_TAG in response.choices[0].message.content:
-        output = response.choices[0].message.content.split(THINK_END_TAG)[1]
+    if THINK_END_TAG in content:
+        output = content.split(THINK_END_TAG)[1]
     else:
-        output = response.choices[0].message.content
+        output = content
     return output
 
 def generate_the_report(concepts, saving_dir=os.path.join(os.getcwd(), SAVINGS_DIR_NAME)):

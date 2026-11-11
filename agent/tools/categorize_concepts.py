@@ -4,6 +4,8 @@ import re
 import os
 from tqdm import tqdm
 
+from tools import llm_backend
+
 # ───────────────────────────── CONFIG (edit here) ─────────────────────────────
 LLM_BASE_URL        = "http://localhost:8080/v1/"   # OpenAI-compatible (TGI) chat endpoint
 LLM_MODEL           = "tgi"                          # model name sent to the server
@@ -211,16 +213,20 @@ def categorize_the_concepts(start, saving_dir = os.path.join(os.getcwd(), SAVING
     
     try:
 
-        response = client.chat.completions.create(
-            model=LLM_MODEL,
-            messages=[
-                {"role": "system", "content": sys_msg},
-                {"role": "user", "content": prompt}
-            ],
-            stream=False,
-            max_tokens=MAX_NEW_TOKENS
-        )
-        output = response.choices[0].message.content.strip()
+        messages = [
+            {"role": "system", "content": sys_msg},
+            {"role": "user", "content": prompt}
+        ]
+        if llm_backend.is_local():
+            output = llm_backend.chat(messages, max_new_tokens=MAX_NEW_TOKENS).strip()
+        else:
+            response = client.chat.completions.create(
+                model=LLM_MODEL,
+                messages=messages,
+                stream=False,
+                max_tokens=MAX_NEW_TOKENS
+            )
+            output = response.choices[0].message.content.strip()
         # print(output)
         # Parse response
         categorized_concepts = parse_model_response(output)

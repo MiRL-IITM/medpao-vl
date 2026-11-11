@@ -35,7 +35,7 @@ image + vision concepts
 ## Setup
 
 1. **Python packages:** `pandas tqdm pillow requests numpy huggingface_hub transformers torch scikit-learn faiss-cpu llama-cpp-python psutil rapidfuzz` (`rapidfuzz` is only needed by the warm script).
-2. **Three TGI-compatible servers** must be running (change the URLs at the top of each tool if yours differ):
+2. **Three TGI-compatible servers** must be running (or, instead, give model paths to load the LLMs locally: see [Local models instead of servers](#local-models-instead-of-servers)) (change the URLs at the top of each tool if yours differ):
 
    | Port | Used by | Type |
    |---|---|---|
@@ -92,6 +92,44 @@ python app.py                                     # http://127.0.0.1:7860
 ```
 
 Upload a chest X-ray, pick the agent mode (default `deterministic`) and press **Generate**. The page shows the predicted concepts, attention maps for the most confident present concepts, the structured ABCDEF report, the free-text report (and the first draft), and the correction log and timings. Tick *Vision step only* to try the interface without the LLM servers. Requests are processed one at a time because the agent scripts share one scratch folder. Options: `--vision-model`, `--host`, `--port`, `--share`.
+
+## Local models instead of servers
+
+By default the agent calls the three TGI servers. It can instead **load the LLMs in the same process** from model paths. Give the paths and every model is loaded up front (`preload`), then used whenever a step needs it. The server mode stays the default and is unchanged.
+
+Three models (roles) are needed:
+
+| Role | Used for | Replaces |
+|---|---|---|
+| `vlm` (+ optional LoRA `vlm-adapter`) | grounded report, missing-concept lines | server on port 8082 |
+| `extractor` | concept extraction (raw text completion) | server on port 8081 |
+| `chat` | categorization, structured report | server on port 8080 |
+
+`extractor` and `chat` may be the same path; the model is then loaded once. Each path can be a local folder or a Hub id.
+
+```bash
+cd agent
+
+# one image
+python inference.py --image cxr.jpg \
+    --vlm-model google/medgemma-4b-it --vlm-adapter ../hf_upload/hf_lora_cxr \
+    --extractor-model <path> --chat-model <path>
+
+# Gradio demo (models are loaded at start-up; --no-preload loads them on the first request instead)
+python app.py --vlm-model <path> --vlm-adapter <lora> --extractor-model <path> --chat-model <path>
+
+# batch scripts take the same settings from environment variables
+MEDPAO_BACKEND=local MEDPAO_VLM_MODEL=<path> MEDPAO_VLM_ADAPTER=<lora> \
+MEDPAO_EXTRACTOR_MODEL=<path> MEDPAO_CHAT_MODEL=<path> python deterministic.py
+```
+
+Other options: `--llm-dtype` (default `auto`: bfloat16 on GPUs that support it, float16 otherwise, bfloat16 on CPU), `--device-map` (default `auto`, spreads large models over all GPUs), `--load-in-4bit` (needs `bitsandbytes`). Giving any `--*-model` path switches to the local backend; `--backend server` forces the servers.
+
+Notes:
+- The local models need enough GPU memory for all three roles together; large chat models usually need several GPUs or `--load-in-4bit`.
+- Server-only options such as the OpenAI-style `frequency_penalty` are reproduced with a standard logits penalty, so outputs can differ slightly from the servers. The values are the `*_PENALTY` constants at the top of `tools/generate_report.py`.
+- Models that wrap their answer in a markdown fence or a `<think>` block are handled as before: the structured-report step strips `</think>`, and the JSON is found with a regex.
+- The SNOMED index and SapBERT files are still required (they were never served over HTTP).
 
 ## Output
 

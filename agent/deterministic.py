@@ -9,6 +9,7 @@ from tools.get_concept import get_the_concept
 from tools.categorize_concepts import categorize_the_concepts
 from tools.generate_structured_report import generate_the_report
 from tools.ontology_map_sapbert import SnomedMatcher
+from tools import llm_backend
 
 # ───────────────────────────── CONFIG (edit here) ─────────────────────────────
 # --- Folders ---
@@ -163,6 +164,7 @@ def run_deterministic_pipeline(image_path: str, vision_concepts_str: str) -> dic
 
 
 if __name__=='__main__':
+    llm_backend.preload()      # MEDPAO_BACKEND=local: load all LLMs up front (no-op for the servers)
     full_df = pd.read_csv(INPUT_CSV)
 
     rows = full_df.iloc[ROW_START:ROW_END if ROW_END is not None else len(full_df)//2]

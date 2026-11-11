@@ -6,6 +6,8 @@ import re
 import os
 import ast
 
+from tools import llm_backend
+
 # ───────────────────────────── CONFIG (edit here) ─────────────────────────────
 LLM_BASE_URL        = "http://localhost:8081"    # local TGI text-generation server
 MAX_NEW_TOKENS      = 1000                       # generation budget for concept extraction
@@ -159,11 +161,13 @@ def get_llm_response(medical_report):
     Returns:
         str: The LLM's response containing extracted concepts
     """
-    # Initialize the local inference client
-    client = InferenceClient(base_url=LLM_BASE_URL)
-    
     # Generate the prompt and send it to the language model
     user = get_prompt(medical_report)
+    if llm_backend.is_local():
+        return llm_backend.text_complete(user, max_new_tokens=MAX_NEW_TOKENS, stop=STOP_SEQUENCES)
+
+    # Initialize the local inference client
+    client = InferenceClient(base_url=LLM_BASE_URL)
     response = client.text_generation(user, max_new_tokens=MAX_NEW_TOKENS, stop=STOP_SEQUENCES, return_full_text=False)
     return response
 

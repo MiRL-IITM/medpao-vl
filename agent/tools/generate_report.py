@@ -9,6 +9,8 @@ import base64
 import io
 import requests
 
+from tools import llm_backend
+
 # ───────────────────────────── CONFIG (edit here) ─────────────────────────────
 TGI_URL              = "http://localhost:8082"   # TGI multimodal endpoint (no /v1/ suffix)
 MODEL_NAME           = "tgi"                      # model name sent to the server
@@ -83,8 +85,8 @@ def _remove_repeated_sentences(text: str) -> str:
 
 def generate_the_grounded_report(img_path, vision_concepts, saving_dir=os.path.join(os.getcwd(), SAVINGS_DIR_NAME), missing_prompt=None, id=None):
     """
-    Processes a single image: loads it, calls the TGI VLM server,
-    and returns the prediction.
+    Processes a single image: loads it, calls the VLM (TGI server or a local model,
+    see tools/llm_backend.py), and returns the prediction.
     """
     print("\n===========================================Generating grounded report=========================")
     # Parse vision_concepts into dict with present/absent keys
@@ -111,73 +113,82 @@ def generate_the_grounded_report(img_path, vision_concepts, saving_dir=os.path.j
                 f"Findings:"
             )
 
-            # Try chat completions first, fall back to generate endpoint
-            try:
-                messages = [
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "image_url", "image_url": {"url": image_url}},
-                            {"type": "text", "text": prompt_text},
-                        ],
-                    },
-                ]
-                output = client.chat.completions.create(
-                    model=MODEL_NAME,
-                    messages=messages,
-                    max_tokens=REPORT_MAX_NEW_TOKENS,
-                    stream=False,
-                    frequency_penalty=REPORT_FREQUENCY_PENALTY,
+            if llm_backend.is_local():
+                report = llm_backend.vlm_generate(
+                    image, prompt_text,
+                    max_new_tokens=REPORT_MAX_NEW_TOKENS,
                     repetition_penalty=REPORT_REPETITION_PENALTY,
+                    frequency_penalty=REPORT_FREQUENCY_PENALTY,
                     stop=STOP_SEQUENCES,
                 )
-                report = output.choices[0].message.content
-            except Exception as chat_err:
-                print(f"⚠️ Chat completions failed ({chat_err}), falling back to /generate endpoint …")
-                # Fallback: use the raw /generate endpoint
-                payload = {
-                    "inputs": prompt_text,
-                    "parameters": {
-                        "max_new_tokens": REPORT_MAX_NEW_TOKENS,
-                        "do_sample": False,
-                        "repetition_penalty": REPORT_REPETITION_PENALTY,
-                        "stop": STOP_SEQUENCES,
-                    },
-                }
-                response = requests.post(
-                    f"{TGI_URL}/generate",
-                    json=payload,
-                    headers={"Content-Type": "application/json"},
-                    timeout=REQUEST_TIMEOUT,
-                )
-                if response.status_code == 200:
-                    result = response.json()
-                    report = result.get("generated_text", str(result))
-                else:
-                    # Final fallback: use the /v1/completions endpoint (non-chat)
-                    payload_v1 = {
-                        "model": MODEL_NAME,
-                        "prompt": prompt_text,
-                        "max_tokens": COMPLETIONS_MAX_TOKENS,
-                        "stop": STOP_SEQUENCES,
+            else:
+                # Try chat completions first, fall back to generate endpoint
+                try:
+                    messages = [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "image_url", "image_url": {"url": image_url}},
+                                {"type": "text", "text": prompt_text},
+                            ],
+                        },
+                    ]
+                    output = client.chat.completions.create(
+                        model=MODEL_NAME,
+                        messages=messages,
+                        max_tokens=REPORT_MAX_NEW_TOKENS,
+                        stream=False,
+                        frequency_penalty=REPORT_FREQUENCY_PENALTY,
+                        repetition_penalty=REPORT_REPETITION_PENALTY,
+                        stop=STOP_SEQUENCES,
+                    )
+                    report = output.choices[0].message.content
+                except Exception as chat_err:
+                    print(f"⚠️ Chat completions failed ({chat_err}), falling back to /generate endpoint …")
+                    # Fallback: use the raw /generate endpoint
+                    payload = {
+                        "inputs": prompt_text,
+                        "parameters": {
+                            "max_new_tokens": REPORT_MAX_NEW_TOKENS,
+                            "do_sample": False,
+                            "repetition_penalty": REPORT_REPETITION_PENALTY,
+                            "stop": STOP_SEQUENCES,
+                        },
                     }
-                    response_v1 = requests.post(
-                        f"{TGI_URL}/v1/completions",
-                        json=payload_v1,
+                    response = requests.post(
+                        f"{TGI_URL}/generate",
+                        json=payload,
                         headers={"Content-Type": "application/json"},
                         timeout=REQUEST_TIMEOUT,
                     )
-                    if response_v1.status_code == 200:
-                        result_v1 = response_v1.json()
-                        report = result_v1["choices"][0]["text"]
+                    if response.status_code == 200:
+                        result = response.json()
+                        report = result.get("generated_text", str(result))
+                    else:
+                        # Final fallback: use the /v1/completions endpoint (non-chat)
+                        payload_v1 = {
+                            "model": MODEL_NAME,
+                            "prompt": prompt_text,
+                            "max_tokens": COMPLETIONS_MAX_TOKENS,
+                            "stop": STOP_SEQUENCES,
+                        }
+                        response_v1 = requests.post(
+                            f"{TGI_URL}/v1/completions",
+                            json=payload_v1,
+                            headers={"Content-Type": "application/json"},
+                            timeout=REQUEST_TIMEOUT,
+                        )
+                        if response_v1.status_code == 200:
+                            result_v1 = response_v1.json()
+                            report = result_v1["choices"][0]["text"]
 
                         
-                    else:
-                        raise Exception(
-                            f"All endpoints failed. "
-                            f"/generate: {response.status_code} {response.text[:200]}, "
-                            f"/v1/completions: {response_v1.status_code} {response_v1.text[:200]}"
-                        )
+                        else:
+                            raise Exception(
+                                f"All endpoints failed. "
+                                f"/generate: {response.status_code} {response.text[:200]}, "
+                                f"/v1/completions: {response_v1.status_code} {response_v1.text[:200]}"
+                            )
 
             # Post-process: remove repeated sentences
             report = _remove_repeated_sentences(report)
@@ -222,67 +233,77 @@ def generate_the_grounded_report(img_path, vision_concepts, saving_dir=os.path.j
                 "Focused Findings:"
             )
 
-            try:
-                messages = [
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": image_url
-                                }
-                            },
-                            {
-                                "type": "text",
-                                "text": prompt_text
-                            },
-                        ],
-                    },
-                ]
-
-                output = client.chat.completions.create(
-                    model=MODEL_NAME,
-                    messages=messages,
-                    max_tokens=MISSING_MAX_NEW_TOKENS,
-                    stream=False,
+            if llm_backend.is_local():
+                missing_report = llm_backend.vlm_generate(
+                    image, prompt_text,
+                    max_new_tokens=MISSING_MAX_NEW_TOKENS,
                     temperature=MISSING_TEMPERATURE,
-                    frequency_penalty=MISSING_FREQUENCY_PENALTY,
                     repetition_penalty=MISSING_REPETITION_PENALTY,
+                    frequency_penalty=MISSING_FREQUENCY_PENALTY,
                     stop=STOP_SEQUENCES,
-                )
+                ).strip()
+            else:
+                try:
+                    messages = [
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": image_url
+                                    }
+                                },
+                                {
+                                    "type": "text",
+                                    "text": prompt_text
+                                },
+                            ],
+                        },
+                    ]
 
-                missing_report = output.choices[0].message.content.strip()
-
-            except Exception as chat_err:
-                print(f"⚠️ Chat completion failed: {chat_err}")
-
-                payload = {
-                    "inputs": prompt_text,
-                    "parameters": {
-                        "max_new_tokens": MISSING_MAX_NEW_TOKENS,
-                        "do_sample": False,
-                        "temperature": MISSING_TEMPERATURE,
-                        "repetition_penalty": MISSING_REPETITION_PENALTY,
-                        "stop": STOP_SEQUENCES,
-                    },
-                }
-
-                response = requests.post(
-                    f"{TGI_URL}/generate",
-                    json=payload,
-                    headers={"Content-Type": "application/json"},
-                    timeout=REQUEST_TIMEOUT,
-                )
-
-                if response.status_code == 200:
-                    result = response.json()
-                    missing_report = result.get("generated_text", "").strip()
-                else:
-                    raise Exception(
-                        f"/generate endpoint failed: "
-                        f"{response.status_code} {response.text[:200]}"
+                    output = client.chat.completions.create(
+                        model=MODEL_NAME,
+                        messages=messages,
+                        max_tokens=MISSING_MAX_NEW_TOKENS,
+                        stream=False,
+                        temperature=MISSING_TEMPERATURE,
+                        frequency_penalty=MISSING_FREQUENCY_PENALTY,
+                        repetition_penalty=MISSING_REPETITION_PENALTY,
+                        stop=STOP_SEQUENCES,
                     )
+
+                    missing_report = output.choices[0].message.content.strip()
+
+                except Exception as chat_err:
+                    print(f"⚠️ Chat completion failed: {chat_err}")
+
+                    payload = {
+                        "inputs": prompt_text,
+                        "parameters": {
+                            "max_new_tokens": MISSING_MAX_NEW_TOKENS,
+                            "do_sample": False,
+                            "temperature": MISSING_TEMPERATURE,
+                            "repetition_penalty": MISSING_REPETITION_PENALTY,
+                            "stop": STOP_SEQUENCES,
+                        },
+                    }
+
+                    response = requests.post(
+                        f"{TGI_URL}/generate",
+                        json=payload,
+                        headers={"Content-Type": "application/json"},
+                        timeout=REQUEST_TIMEOUT,
+                    )
+
+                    if response.status_code == 200:
+                        result = response.json()
+                        missing_report = result.get("generated_text", "").strip()
+                    else:
+                        raise Exception(
+                            f"/generate endpoint failed: "
+                            f"{response.status_code} {response.text[:200]}"
+                        )
 
             # Clean report
             missing_report = _remove_repeated_sentences(missing_report)

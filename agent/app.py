@@ -7,6 +7,9 @@ Run from this folder:
     python app.py                       # http://127.0.0.1:7860
     python app.py --share               # temporary public link
 
+    # load the LLMs in this process instead of calling the HTTP servers (all models are loaded at start-up):
+    python app.py --vlm-model <path> [--vlm-adapter <lora>] --extractor-model <path> --chat-model <path>
+
 The report stages need the same LLM servers and index files as the batch scripts (see README.md).
 Research use only: not a medical device, not validated for clinical use.
 """
@@ -20,6 +23,7 @@ import gradio as gr
 from PIL import Image
 
 import inference as mp
+from tools import llm_backend
 from inference import (DEFAULT_MODE, MIN_CONCEPT_PROB, TOP_K_OVERLAYS, VISION_MODEL, final_report_text,
                        structured_report_markdown)
 
@@ -119,7 +123,14 @@ def main(argv=None):
     p.add_argument("--host", default=SERVER_NAME)
     p.add_argument("--port", type=int, default=SERVER_PORT)
     p.add_argument("--share", action="store_true", help="create a temporary public gradio.live link")
+    p.add_argument("--no-preload", action="store_true", help="load the models on the first request instead of at start-up")
+    llm_backend.add_cli_args(p)
     a = p.parse_args(argv)
+
+    llm_backend.configure_from_args(a)
+    if not a.no_preload:
+        _get_predictor(a.vision_model)
+        llm_backend.preload()      # local backend: load every LLM now (no-op for the server backend)
     demo = build_demo(a.vision_model)
     demo.queue(default_concurrency_limit=1).launch(server_name=a.host, server_port=a.port, share=a.share)
 

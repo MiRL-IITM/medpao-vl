@@ -8,7 +8,12 @@ Run from this folder (the agent scripts import ``tools/``):
     python inference.py --image cxr.jpg --mode warm          # PAO loop + concept cache
     python inference.py --image cxr.jpg --concepts-only      # vision step only, no LLM servers needed
 
-The agent stage needs the same servers and files as the batch scripts (see README.md).
+LLM calls go to the HTTP servers configured in tools/*.py by default. To load the LLMs in this process instead:
+
+    python inference.py --image cxr.jpg --vlm-model <path> [--vlm-adapter <lora>] \
+        --extractor-model <path> --chat-model <path>
+
+The agent stage also needs the SNOMED index and SapBERT files (see README.md).
 Research use only: not a medical device, not validated for clinical use.
 """
 from __future__ import annotations
@@ -26,6 +31,9 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from PIL import Image
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # tools/ lives next to this file
+from tools import llm_backend  # noqa: E402
 
 # ───────────────────────────── CONFIG (edit here) ─────────────────────────────
 # Local folder (converted model) or Hugging Face repo id. The Hub repo is gated: log in with `hf auth login`.
@@ -228,9 +236,13 @@ def main(argv=None) -> int:
     p.add_argument("--top-k", type=int, default=TOP_K_OVERLAYS, help="number of attention maps to save")
     p.add_argument("--output-dir", default=OUTPUT_DIR)
     p.add_argument("--concepts-only", action="store_true", help="run only the vision step (no LLM servers needed)")
+    llm_backend.add_cli_args(p)
     a = p.parse_args(argv)
 
+    llm_backend.configure_from_args(a)
     predictor = VisionConceptPredictor(a.vision_model, a.device)
+    if not a.concepts_only:
+        llm_backend.preload()      # local backend: load every LLM now (no-op for the server backend)
     result = run_inference(a.image, a.mode, predictor, a.min_prob, a.top_k, a.concepts_only)
     out_dir = Path(a.output_dir) / Path(a.image).stem
     save_outputs(result, out_dir)

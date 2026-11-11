@@ -12,6 +12,7 @@ from tools.categorize_concepts import categorize_the_concepts
 from tools.generate_structured_report import generate_the_report
 from tools.compare_concepts import Comparison
 from tools.ontology_map_sapbert import SnomedMatcher
+from tools import llm_backend
 
 # ── Self-correction settings ──────────────────────────────────────────────────
 SELF_CORRECTION_ITERATIONS = 3     # max passes of "regenerate lines for the missing concepts"
@@ -301,6 +302,7 @@ def run_pao_pipeline(image_path: str, vision_concepts_str: str, iterations=SELF_
 
 
 if __name__=='__main__':
+    llm_backend.preload()      # MEDPAO_BACKEND=local: load all LLMs up front (no-op for the servers)
     os.makedirs(SAVINGS_DIR, exist_ok=True)
     full_df = pd.read_csv('/home/user/agent/stratified_ablation_sample.csv')
 
