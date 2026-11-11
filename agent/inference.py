@@ -44,6 +44,7 @@ TOP_K_OVERLAYS   = 6                 # attention maps drawn for the most confide
 OVERLAY_ALPHA    = 0.6               # strength of the attention heat map
 ATTN_GRID        = 32                # 448 px input / 14 px patches
 OUTPUT_DIR       = "inference_outputs"
+SCRATCH_DIR      = "inference_outputs/_agent_scratch"   # intermediate agent files (the batch scripts' SAVINGS_DIR)
 
 PRESENT, UNCERTAIN, ABSENT = 0, 1, 2            # class index of the vision model
 AGENT_MODULES = {                                # mode -> (script, single-image function)
@@ -154,6 +155,12 @@ def run_agent(mode: str, image_path: str, concepts_str: str) -> dict:
     module = importlib.import_module(module_name)
     image_path = str(Path(image_path).resolve())
     module.IMG_FOLDER = str(Path(image_path).parent)     # the scripts look the image up as IMG_FOLDER/<file name>
+    scratch = Path(SCRATCH_DIR).resolve() / mode          # the scripts' own SAVINGS_DIR defaults are paths of the original machine
+    scratch.mkdir(parents=True, exist_ok=True)
+    module.SAVINGS_DIR = str(scratch)
+    if hasattr(module, "CACHE_DIR"):
+        module.CACHE_DIR = str(scratch) + module.CACHE_DIR_SUFFIX   # warm mode: persistent concept cache lives next to the scratch folder
+    module.ontology_mapper.saving_dir = str(scratch)
     result = getattr(module, fn_name)(image_path, concepts_str)
     if result is None:
         raise RuntimeError("The agent skipped this image (report generation, concept extraction or the cache "
@@ -178,6 +185,10 @@ def run_inference(image_path: str, mode: str = DEFAULT_MODE, predictor: Optional
     prediction = predictor.predict(image)
     concepts_str = prediction.concept_string(min_prob)
     timings["vision_time_sec"] = round(time.perf_counter() - t, 4)
+    print("\nVision model concepts (probability >= %.2f):" % min_prob)
+    print("  Present :", ", ".join(f"{n} ({p:.2f})" for n, p in prediction.present(min_prob)) or "-")
+    print("  Absent  :", ", ".join(f"{n} ({p:.2f})" for n, p in prediction.absent(min_prob)) or "-")
+    print("  Concept string sent to the VLM:", concepts_str or "-")
 
     result = {
         "image_path": str(image_path),
